@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPU Scheduling Simulator</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f9; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ccc; padding: 10px; text-align: center; }
+        th { background-color: #eee; }
+        .input-group { margin-bottom: 15px; }
+        input, select, button { padding: 8px; margin-right: 10px; }
+        button { background-color: #28a745; color: white; border: none; cursor: pointer; border-radius: 4px; }
+        button:hover { background-color: #218838; }
+        .gantt-chart { display: flex; flex-wrap: wrap; margin-top: 20px; border: 1px solid #333; }
+        .gantt-block { flex: 1; text-align: center; border-right: 1px solid #333; background: #007bff; color: white; padding: 10px 0; position: relative; min-width: 40px; }
+        .gantt-block:last-child { border-right: none; }
+        .gantt-time { position: absolute; bottom: -20px; left: -10px; color: #000; font-size: 12px; }
+        .gantt-time.end { left: auto; right: -10px; }
+        .results { margin-top: 40px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>CPU Scheduling Simulator</h2>
+    
+    <div class="input-group">
+        <label>Algorithm: </label>
+        <select id="algorithm">
+            <option value="FCFS">FCFS</option>
+            <option value="SJF">SJF</option>
+            <option value="RR" selected>Round Robin (RR)</option>
+        </select>
+        <label>Time Quantum (for RR): </label>
+        <input type="number" id="quantum" value="2" min="1" style="width: 60px;">
+    </div>
+
+    <table id="processTable">
+        <thead>
+            <tr>
+                <th>Process ID</th>
+                <th>Arrival Time</th>
+                <th>Burst Time</th>
+            </tr>
+        </thead>
+        <tbody id="processBody">
+            <tr>
+                <td><input type="text" value="P1" class="pid"></td>
+                <td><input type="number" value="0" min="0" class="at"></td>
+                <td><input type="number" value="5" min="1" class="bt"></td>
+            </tr>
+            <tr>
+                <td><input type="text" value="P2" class="pid"></td>
+                <td><input type="number" value="1" min="0" class="at"></td>
+                <td><input type="number" value="3" min="1" class="bt"></td>
+            </tr>
+            <tr>
+                <td><input type="text" value="P3" class="pid"></td>
+                <td><input type="number" value="2" min="0" class="at"></td>
+                <td><input type="number" value="1" min="1" class="bt"></td>
+            </tr>
+        </tbody>
+    </table>
+    
+    <button type="button" onclick="addProcess()" style="margin-top: 10px; background-color: #007bff;">Add Process</button>
+    <button type="button" onclick="simulate()" style="margin-top: 10px;">Simulate</button>
+
+    <div id="output" class="results" style="display: none;">
+        <h3>Gantt Chart</h3>
+        <div id="ganttChart" class="gantt-chart"></div>
+
+        <h3>Results</h3>
+        <table id="resultTable">
+            <thead>
+                <tr>
+                    <th>Process ID</th>
+                    <th>Arrival Time</th>
+                    <th>Burst Time</th>
+                    <th>Waiting Time</th>
+                    <th>Turnaround Time</th>
+                </tr>
+            </thead>
+            <tbody id="resultBody"></tbody>
+        </table>
+        <h4 id="avgWt"></h4>
+    </div>
+</div>
+
+<script>
+    function addProcess() {
+        const tbody = document.getElementById('processBody');
+        const rowCount = tbody.rows.length + 1;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><input type="text" value="P${rowCount}" class="pid"></td>
+            <td><input type="number" value="0" min="0" class="at"></td>
+            <td><input type="number" value="1" min="1" class="bt"></td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    function simulate() {
+        const rows = document.querySelectorAll('#processBody tr');
+        let processes = [];
+        
+        rows.forEach((row, index) => {
+            let pid = row.querySelector('.pid').value;
+            let at = parseInt(row.querySelector('.at').value);
+            let bt = parseInt(row.querySelector('.bt').value);
+            processes.push({ id: pid, at: at, bt: bt, rem_bt: bt, wt: 0, tat: 0, ct: 0 });
+        });
+
+        // Sort by arrival time
+        processes.sort((a, b) => a.at - b.at);
+
+        let quantum = parseInt(document.getElementById('quantum').value);
+        let time = 0;
+        let completed = 0;
+        let n = processes.length;
+        let queue = [];
+        let gantt = [];
+        let visited = new Array(n).fill(false);
+
+        // Initial push to queue
+        if (processes[0].at > 0) {
+            time = processes[0].at;
+            gantt.push({ id: "Idle", start: 0, end: time });
+        }
+        
+        queue.push(0);
+        visited[0] = true;
+
+        while (completed !== n) {
+            let idx = queue.shift();
+
+            if (processes[idx].rem_bt > quantum) {
+                processes[idx].rem_bt -= quantum;
+                let start = time;
+                time += quantum;
+                gantt.push({ id: processes[idx].id, start: start, end: time });
+            } else {
+                let start = time;
+                time += processes[idx].rem_bt;
+                processes[idx].rem_bt = 0;
+                processes[idx].ct = time;
+                processes[idx].tat = processes[idx].ct - processes[idx].at;
+                processes[idx].wt = processes[idx].tat - processes[idx].bt;
+                completed++;
+                gantt.push({ id: processes[idx].id, start: start, end: time });
+            }
+
+            // Check for newly arrived processes
+            for (let i = 0; i < n; i++) {
+                if (processes[i].at <= time && !visited[i] && processes[i].rem_bt > 0) {
+                    queue.push(i);
+                    visited[i] = true;
+                }
+            }
+
+            // Push current process back to queue if not finished
+            if (processes[idx].rem_bt > 0) {
+                queue.push(idx);
+            }
+
+            // Handle CPU Idle time if queue is empty but processes are left
+            if (queue.length === 0 && completed !== n) {
+                let nextArrival = Infinity;
+                let nextIdx = -1;
+                for (let i = 0; i < n; i++) {
+                    if (processes[i].rem_bt > 0 && processes[i].at < nextArrival) {
+                        nextArrival = processes[i].at;
+                        nextIdx = i;
+                    }
+                }
+                if (nextIdx !== -1) {
+                    gantt.push({ id: "Idle", start: time, end: nextArrival });
+                    time = nextArrival;
+                    queue.push(nextIdx);
+                    visited[nextIdx] = true;
+                }
+            }
+        }
+
+        renderOutput(processes, gantt);
+    }
+
+    function renderOutput(processes, gantt) {
+        document.getElementById('output').style.display = 'block';
+        
+        // Render Gantt
+        const ganttDiv = document.getElementById('ganttChart');
+        ganttDiv.innerHTML = '';
+        gantt.forEach((block, i) => {
+            let div = document.createElement('div');
+            div.className = 'gantt-block';
+            if(block.id === "Idle") div.style.background = "#ccc";
+            
+            div.innerHTML = `
+                ${block.id}
+                <span class="gantt-time">${block.start}</span>
+                ${i === gantt.length - 1 ? `<span class="gantt-time end">${block.end}</span>` : ''}
+            `;
+            ganttDiv.appendChild(div);
+        });
+
+        // Render Table & Avg WT
+        const tbody = document.getElementById('resultBody');
+        tbody.innerHTML = '';
+        let totalWt = 0;
+
+        // Sort back by ID for clean table display
+        processes.sort((a, b) => a.id.localeCompare(b.id));
+
+        processes.forEach(p => {
+            totalWt += p.wt;
+            let tr = document.createElement('tr');
+            tr.innerHTML = `<td>${p.id}</td><td>${p.at}</td><td>${p.bt}</td><td>${p.wt}</td><td>${p.tat}</td>`;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('avgWt').innerText = `Average Waiting Time: ${(totalWt / processes.length).toFixed(2)} units`;
+    }
+</script>
+</body>
+</html>
